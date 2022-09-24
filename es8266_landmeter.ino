@@ -311,10 +311,10 @@ void loop() {
 
     drawCompass(75, 70, 120, 40, angles); // Draw centre of compass at 50,50
 
-    drawCompass2(75, 55, 120, 150, angle); // Draw centre of compass at 50,50
+    drawCompass2(75, 60, 120, 155, angle); // Draw centre of compass at 50,50
 
-    drawScaleSprite(120, 40, angles);
-    drawScaleSprite1(120, 40, angles);
+    drawScaleSprite(120, 50, angles);
+    drawScaleSprite1(120, 50, angles);
 
     drawScaleSprites(120, 40, angle);
     drawScaleSprites1(120, 40, angle);
@@ -398,7 +398,7 @@ void drawFooterSprite(float temp, float altitude) {
   //ft.drawString("m", 240, 0, 4);
 
 
-  ft.pushSprite(0, 210, BLACK);
+  ft.pushSprite(0, 215, BLACK);
   //ft.setPivot(120, 220);     // Set pivot to middle of TFT screen
   //ft.pushRotated(0);
   ft.deleteSprite();
@@ -413,7 +413,7 @@ void drawScaleSprite(int x, int y, int angle) {
   // img.deleteSprite();
 
   sc1.setColorDepth(4);
-  sc1.createSprite(44, 80);
+  sc1.createSprite(44, (y*2));
   sc1.createPalette(palette);
 
   int ang = 0;
@@ -423,8 +423,8 @@ void drawScaleSprite(int x, int y, int angle) {
 
   // Draw 12 lines
   for (int i = 0 ; i < 360; i += 1) {
-    if (  ( i >= 70 && i <= 110 ) ||
-          ( i <= 290 && i >= 250 ) ) {
+    if (  ( i >= 65 && i <= 110 ) ||
+          ( i <= 295 && i >= 245 ) ) {
 
       sx = cos((i - 90) * 0.0174532925);
       sy = sin((i - 90) * 0.0174532925);
@@ -460,6 +460,7 @@ void drawScaleSprite(int x, int y, int angle) {
       if (i == 270 || i == 90) sc1.drawLine(x0, yy0, x1, yy1, GREEN );
       else if (i == 280 || i == 80 || i == 100 || i == 260) sc1.drawLine(x0, yy0, x1, yy1, YELLOW);
       else if (i == 290 || i == 70 || i == 250 || i == 110 ) sc1.drawLine(x0, yy0, x1, yy1, RED);
+      else if (i == 300 || i == 60 || i == 240 || i == 120 ) sc1.drawLine(x0, yy0, x1, yy1, BLUE);
 
       if (i % 5 == 0 && i % 10 != 0)  sc1.drawLine(x0, yy0, x2, yy2, 15);
 
@@ -469,7 +470,7 @@ void drawScaleSprite(int x, int y, int angle) {
   }
 
   //sc1.pushSprite(0, 0, TFT_TRANSPARENT);
-  tft.setPivot(22, 40);     // Set pivot to middle of TFT screen
+  tft.setPivot(22, y);     // Set pivot to middle of TFT screen
   sc1.pushRotated(0);
   sc1.deleteSprite();
 }
@@ -482,7 +483,7 @@ void drawScaleSprite1(int x, int y, int angle) {
   // img.deleteSprite();
 
   sc2.setColorDepth(4);
-  sc2.createSprite(44, 80);
+  sc2.createSprite(44, (y*2));
   sc2.createPalette(palette);
 
   int ang = 0;
@@ -497,8 +498,8 @@ void drawScaleSprite1(int x, int y, int angle) {
 
   // Draw 12 lines
   for (int i = 0 ; i < 360; i += 1) {
-    if (  ( i >= 70 && i <= 110 ) ||
-          ( i <= 290 && i >= 250 ) ) {
+    if (  ( i >= 65 && i <= 110 ) ||
+          ( i <= 295 && i >= 245 ) ) {
 
       sx = cos((i - 90) * 0.0174532925);
       sy = sin((i - 90) * 0.0174532925);
@@ -543,7 +544,7 @@ void drawScaleSprite1(int x, int y, int angle) {
   }
 
   //sc1.pushSprite(0, 0, TFT_TRANSPARENT);
-  tft.setPivot(218, 40);     // Set pivot to middle of TFT screen
+  tft.setPivot(218, y);     // Set pivot to middle of TFT screen
   sc2.pushRotated(180);
   sc2.deleteSprite();
 }
@@ -868,7 +869,7 @@ void drawCompass2(int x, int y, int posx, int posy, int angle)
   //imgs.drawString("S",x,y+42,2);
   //imgs.drawString("W",x-42,9,2);
   imgs.pushImage(0, 25, backWidth, backHeight, back);
-  imgs.drawCircle(x, y, 30, TFT_DARKGREY);
+  imgs.drawCircle(x, y+15, 30, TFT_DARKGREY);
   int angl = 90;
 
   //getCoord(x, y, &lx1, &ly1, NEEDLE_L, angl);
@@ -880,9 +881,9 @@ void drawCompass2(int x, int y, int posx, int posy, int angle)
   //img.fillTriangle(lx1,ly1,lx3,ly3,lx4,ly4,TFT_RED);
   //img.fillTriangle(lx2,ly2,lx3,ly3,lx4,ly4,TFT_LIGHTGREY);
 
-  imgs.fillCircle(x, y, 3, TFT_DARKGREY);
-  imgs.fillCircle(x, y, 2, TFT_LIGHTGREY);
-  imgs.drawString(String(angle), x, y + 5, 6);
+  imgs.fillCircle(x, y+15, 3, TFT_DARKGREY);
+  imgs.fillCircle(x, y+15, 2, TFT_LIGHTGREY);
+  imgs.drawString(String(angle), x, y + 20, 6);
 
 
   //img.pushSprite(posx, posy, TFT_TRANSPARENT);
