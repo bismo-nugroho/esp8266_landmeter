@@ -8,6 +8,23 @@
 
 #define BACKGROUND TFT_BLACK
 
+
+#include "NMEAGPS.h"
+#include <EEPROM.h>
+#include <CircularBuffer.h>
+
+#include "BluetoothSerial.h"
+
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+
+
+BluetoothSerial SerialBT;
+
+
 // Pause in milliseconds to set refresh speed
 #define WAIT 20
 
@@ -47,6 +64,31 @@ TFT_eSprite sc4 = TFT_eSprite(&tft);  // Create Sprite object "img" with pointer
 TFT_eSprite ft = TFT_eSprite(&tft);  // Create Sprite object "img" with pointer to "tft" object
 // the pointer is used by pushSprite() to push it onto the TFT
 
+TFT_eSprite fts = TFT_eSprite(&tft);  // Create Sprite object "img" with pointer to "tft" object
+// the pointer is used by pushSprite() to push it onto the TFT
+
+
+TaskHandle_t Task1;
+TaskHandle_t Task2;
+
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+uint8_t temprature_sens_read();
+
+#ifdef __cplusplus
+}
+#endif
+
+uint8_t temprature_sens_read();
+
+
+// LED pins
+const int led1 = 22;
+const int led2 = 22;
 
 int number = 0;
 int angle  = 0;
@@ -93,6 +135,9 @@ Adafruit_BMP280  bmp280;
 
 Adafruit_MPU6050 mpu;
 
+
+
+
 //MPU6050 mpu(Wire);
 
 #define GREEN 9
@@ -102,11 +147,42 @@ Adafruit_MPU6050 mpu;
 #define WHITE 15
 #define BLUE 9
 
+
+float coollant = 0.0;
+float volt = 0.0;
+float temps = 0.0;
+float tempset = 0.0;
+int acstat = 0;
+int signallvl = 0;
+float batlvl = 0.0;
+int fanst = 0;
+int gprsst = 0;
+
+
+typedef struct gpsdata_struct {
+  double Lat;
+  double Long;
+  double odometer;
+  int alt;
+  float gps_speed;
+  byte num_sat;
+  byte satinview;
+  String datelocal;
+  bool valid_location;
+} gpsdata_struct;
+
 // -------------------------------------------------------------------------
 // Setup
 // -------------------------------------------------------------------------
 void setup(void) {
   Serial.begin(9600);
+
+
+  
+      SerialBT.begin("ESP32test"); //Bluetooth device name
+
+  gps_setup();
+  //init_gprs();
 
   // Populate the palette table, table must have 16 entries
   palette[0]  = TFT_BLACK;
@@ -128,113 +204,141 @@ void setup(void) {
 
   tft.init();
 
-  tft.setRotation(1);
+  tft.setRotation(0);
 
   tft.fillScreen(BACKGROUND);
 
+
   /* Default settings from datasheet. */
-  bmp280.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
-                     Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
-                     Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-                     Adafruit_BMP280::FILTER_X16,      /* Filtering. */
-                     Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
 
-  Wire.begin(D2, D1);  // set I2C pins [SDA = D2, SCL = D1], default clock is 100kHz
-  //Wire.begin();
-  if ( bmp280.begin(BMP280_I2C_ADDRESS) == 0 ) {
-    // connection error or device address wrong!
-    //tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);   // set text color to white and black background
-    tft.setTextSize(10);      // text size = 4
-    tft.setCursor(3, 88);    // move cursor to position (3, 88) pixel
-    tft.print("Connection");
-    tft.setCursor(63, 126);  // move cursor to position (63, 126) pixel
-    tft.print("Error");
-    while (1); // stay here
-  }
+  //  bmp280.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
+  //                     Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
+  //                     Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
+  //                     Adafruit_BMP280::FILTER_X16,      /* Filtering. */
+  //                     Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
 
-
-  //  Wire.begin();
-  //  mpu.begin();
-  // display.println(F("Calculating gyro offset, do not move MPU6050"));
-  // display.display();
-  // mpu.calcGyroOffsets();
-
-
-  if (!mpu.begin()) {
-    Serial.println("Failed to find MPU6050 chip");
-    while (1) {
-      delay(10);
+  /*
+    Wire.begin(D2, D1);  // set I2C pins [SDA = D2, SCL = D1], default clock is 100kHz
+    //Wire.begin();
+    if ( bmp280.begin(BMP280_I2C_ADDRESS) == 0 ) {
+      // connection error or device address wrong!
+      //tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);   // set text color to white and black background
+      tft.setTextSize(10);      // text size = 4
+      tft.setCursor(3, 88);    // move cursor to position (3, 88) pixel
+      tft.print("Connection");
+      tft.setCursor(63, 126);  // move cursor to position (63, 126) pixel
+      tft.print("Error");
+      while (1); // stay here
     }
-  }
 
-  Serial.println("MPU6050 Found!");
-  ///*
-  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
-  Serial.print("Accelerometer range set to: ");
-  switch (mpu.getAccelerometerRange()) {
-    case MPU6050_RANGE_2_G:
-      Serial.println("+-2G");
-      break;
-    case MPU6050_RANGE_4_G:
-      Serial.println("+-4G");
-      break;
-    case MPU6050_RANGE_8_G:
-      Serial.println("+-8G");
-      break;
-    case MPU6050_RANGE_16_G:
-      Serial.println("+-16G");
-      break;
-  }
-  mpu.setGyroRange(MPU6050_RANGE_2000_DEG);
-  Serial.print("Gyro range set to: ");
-  switch (mpu.getGyroRange()) {
-    case MPU6050_RANGE_250_DEG:
-      Serial.println("+- 250 deg/s");
-      break;
-    case MPU6050_RANGE_500_DEG:
-      Serial.println("+- 500 deg/s");
-      break;
-    case MPU6050_RANGE_1000_DEG:
-      Serial.println("+- 1000 deg/s");
-      break;
-    case MPU6050_RANGE_2000_DEG:
-      Serial.println("+- 2000 deg/s");
-      break;
-  }
 
-  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
-  Serial.print("Filter bandwidth set to: ");
-  switch (mpu.getFilterBandwidth()) {
-    case MPU6050_BAND_260_HZ:
-      Serial.println("260 Hz");
-      break;
-    case MPU6050_BAND_184_HZ:
-      Serial.println("184 Hz");
-      break;
-    case MPU6050_BAND_94_HZ:
-      Serial.println("94 Hz");
-      break;
-    case MPU6050_BAND_44_HZ:
-      Serial.println("44 Hz");
-      break;
-    case MPU6050_BAND_21_HZ:
-      Serial.println("21 Hz");
-      break;
-    case MPU6050_BAND_10_HZ:
-      Serial.println("10 Hz");
-      break;
-    case MPU6050_BAND_5_HZ:
-      Serial.println("5 Hz");
-      break;
-  }
-  //*/
+    //  Wire.begin();
+    //  mpu.begin();
+    // display.println(F("Calculating gyro offset, do not move MPU6050"));
+    // display.display();
+    // mpu.calcGyroOffsets();
+
+
+    if (!mpu.begin()) {
+      Serial.println("Failed to find MPU6050 chip");
+      while (1) {
+        delay(10);
+      }
+    }
+
+    Serial.println("MPU6050 Found!");
+    ///*
+    mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+    Serial.print("Accelerometer range set to: ");
+    switch (mpu.getAccelerometerRange()) {
+      case MPU6050_RANGE_2_G:
+        Serial.println("+-2G");
+        break;
+      case MPU6050_RANGE_4_G:
+        Serial.println("+-4G");
+        break;
+      case MPU6050_RANGE_8_G:
+        Serial.println("+-8G");
+        break;
+      case MPU6050_RANGE_16_G:
+        Serial.println("+-16G");
+        break;
+    }
+    mpu.setGyroRange(MPU6050_RANGE_2000_DEG);
+    Serial.print("Gyro range set to: ");
+    switch (mpu.getGyroRange()) {
+      case MPU6050_RANGE_250_DEG:
+        Serial.println("+- 250 deg/s");
+        break;
+      case MPU6050_RANGE_500_DEG:
+        Serial.println("+- 500 deg/s");
+        break;
+      case MPU6050_RANGE_1000_DEG:
+        Serial.println("+- 1000 deg/s");
+        break;
+      case MPU6050_RANGE_2000_DEG:
+        Serial.println("+- 2000 deg/s");
+        break;
+    }
+
+    mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
+    Serial.print("Filter bandwidth set to: ");
+    switch (mpu.getFilterBandwidth()) {
+      case MPU6050_BAND_260_HZ:
+        Serial.println("260 Hz");
+        break;
+      case MPU6050_BAND_184_HZ:
+        Serial.println("184 Hz");
+        break;
+      case MPU6050_BAND_94_HZ:
+        Serial.println("94 Hz");
+        break;
+      case MPU6050_BAND_44_HZ:
+        Serial.println("44 Hz");
+        break;
+      case MPU6050_BAND_21_HZ:
+        Serial.println("21 Hz");
+        break;
+      case MPU6050_BAND_10_HZ:
+        Serial.println("10 Hz");
+        break;
+      case MPU6050_BAND_5_HZ:
+        Serial.println("5 Hz");
+        break;
+    }
+  */
 
   //drawScale(120, 40);
 
+
   tft.setSwapBytes(true);
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+
+  //create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
+  xTaskCreatePinnedToCore(
+    Task1code,   /* Task function. */
+    "Task1",     /* name of task. */
+    20000,       /* Stack size of task */
+    NULL,        /* parameter of the task */
+    1,           /* priority of the task */
+    &Task1,      /* Task handle to keep track of created task */
+    0);          /* pin task to core 0 */
+  delay(500);
+
+  //create a task that will be executed in the Task2code() function, with priority 1 and executed on core 1
+  xTaskCreatePinnedToCore(
+    Task2code,   /* Task function. */
+    "Task2",     /* name of task. */
+    20000,       /* Stack size of task */
+    NULL,        /* parameter of the task */
+    1,           /* priority of the task */
+    &Task2,      /* Task handle to keep track of created task */
+    1);          /* pin task to core 1 */
+  delay(500);
 }
 
-long timer = 0;
+long timerss = 0;
 float temp     = 0;
 float pressure = 0;
 float altitude = 0;
@@ -256,102 +360,152 @@ double yax;
 double zax;
 
 
-void loop() {
-
-  if (millis() - timer > LV_DELAY) {
-
-    timer = millis();
-    // read temperature and pressure from BMP280 sensor
-    temp     = bmp280.readTemperature();   // get temperature
-    pressure = bmp280.readPressure();      // get pressure
-    //float altitude = bmp280.readAltitude(1019.66);
-
-    altitude = bmp280.readAltitude(1013.25);
 
 
 
-    //mpu.update();
-    sensors_event_t a, g, temps;
-    mpu.getEvent(&a, &g, &temps);
+//Task1code: blinks an LED every 1000 ms
+void Task1code( void * pvParameters ) {
+   Serial.print("Task1 running on core ");
+   Serial.println(xPortGetCoreID());
+  digitalWrite(led1, HIGH);
 
-    //angle+=3; //Increment angle for testing
+  for (;;) {
+    // Serial.println("Task1 running on core ");
+        gps_handle();
 
-    // if (angle > 359) angle = 0; // Limit angle to 360
-    // }
-    // angle = mpu.getAngleY();// - (int) ( a.acceleration.y * 10 );
-    //angles = mpu.getAngleZ();// + (int) ( a.acceleration.z * 10 );
+    // gps_handle();
+    //gprs_handle();
+    // Serial.print("Task1 running on core ");
+    //Serial.println(xPortGetCoreID());
+    // digitalWrite(led1, HIGH);
 
-    //angle =  - (int) ( ( a.acceleration.y + g.gyro.y ) * 10 );
-    //angles =  + (int) ( ( a.acceleration.z + g.gyro.z ) * 10 );
-
-    // z = x
-
-
-
-
-    int pitch = (atan2(a.acceleration.z, sqrt(a.acceleration.z * a.acceleration.z + a.acceleration.x * a.acceleration.x)) * 180.0) / M_PI;
-    int roll = -(atan2(a.acceleration.y, a.acceleration.x) * 180.0) / M_PI;
-
-    angles = pitch;
-    angle = roll;
-
-    //Serial.print("aCC x axis = "); Serial.println(a.acceleration.x);
-    // Serial.print("acc y axis = "); Serial.println(a.acceleration.y);
-    //Serial.print("acc z axis = "); Serial.println(a.acceleration.z);
-
-
-    //Serial.print("pitch = "); Serial.println(pitch);
-    // Serial.print("roll = "); Serial.println(roll);
-    //Serial.print("z axis = "); Serial.println(zax);
-
-
-
-
-
-
-    drawCompass(75, 70, 120, 40, angles); // Draw centre of compass at 50,50
-
-    drawCompass2(75, 60, 120, 155, angle); // Draw centre of compass at 50,50
-
-    drawScaleSprite(120, 50, angles);
-    drawScaleSprite1(120, 50, angles);
-
-    drawScaleSprites(120, 40, angle);
-    drawScaleSprites1(120, 40, angle);
-    drawFooterSprite(temp, altitude);
-    /*
-
-      tft.setTextColor(TFT_YELLOW, TFT_BLACK); // Text with background
-      //tft.setCursor(0, 210 );
-      //tft.setTextDatum(BL_DATUM);
-      //tft.printf("%s °c ", String(temps.temperature, 1));
-
-      //tft.setCursor(158, 210 );
-      tft.setTextPadding(50);
-      tft.setTextDatum(BL_DATUM);
-      //tft.drawNumber((int) altitude);
-      //tft.printf( "%s m", String(altitude, 0) );
-      // tft.drawString( String(temps.temperature, 1), 0, 235, 4);
-      tft.drawString( String(temp, 1), 0, 235, 4);
-      tft.setTextPadding(10);
-      tft.drawString("c", 55, 235, 4);
-
-      //tft.setCursor(158, 210 );
-      tft.setTextPadding(50);
-      tft.setTextDatum(BR_DATUM);
-      //tft.drawNumber((int) altitude);
-      //tft.printf( "%s m", String(altitude, 0) );
-      tft.drawString( String(altitude, 0), 215, 235, 4);
-      tft.setTextPadding(1);
-      tft.drawString("m", 240, 235, 4);
-      // tft.drawNumber(altitude);
-      //}
-
-      //delay(WAIT);
-    */
-
-    //delay(1000);
+    // Convert raw temperature in F to Celsius degrees
+    // Serial.print("temp: ");
+    //Serial.print((temprature_sens_read() - 32) / 1.8);
+    // Serial.println(" C");
+    // delay(1000);
+    // digitalWrite(led1, LOW);
+    // Serial.println("Task1 running loop ");
+   delay(100);
   }
+}
+
+//Task2code: blinks an LED every 700 ms
+void Task2code( void * pvParameters ) {
+   Serial.print("Task2 running on core ");
+   Serial.println(xPortGetCoreID());
+  for (;;) {
+     display();
+     delay(100);
+  }
+}
+
+void display(){
+  
+//    gps_handle();
+
+    
+    if (millis() - timerss > LV_DELAY) {
+
+      timerss = millis();
+      // read temperature and pressure from BMP280 sensor
+      //temp     = bmp280.readTemperature();   // get temperature
+      //pressure = bmp280.readPressure();      // get pressure
+      //float altitude = bmp280.readAltitude(1019.66);
+
+      //altitude = bmp280.readAltitude(1013.25);
+
+
+
+      //mpu.update();
+      //sensors_event_t a, g, temps;
+      // mpu.getEvent(&a, &g, &temps);
+
+      //angle+=3; //Increment angle for testing
+
+      // if (angle > 359) angle = 0; // Limit angle to 360
+      // }
+      // angle = mpu.getAngleY();// - (int) ( a.acceleration.y * 10 );
+      //angles = mpu.getAngleZ();// + (int) ( a.acceleration.z * 10 );
+
+      //angle =  - (int) ( ( a.acceleration.y + g.gyro.y ) * 10 );
+      //angles =  + (int) ( ( a.acceleration.z + g.gyro.z ) * 10 );
+
+      // z = x
+
+
+
+
+      // int pitch = (atan2(a.acceleration.z, sqrt(a.acceleration.z * a.acceleration.z
+
+      int pitch = 30;
+      int roll = 10;
+
+      angles = pitch;
+      angle = roll;
+
+      //Serial.print("aCC x axis = "); Serial.println(a.acceleration.x);
+      // Serial.print("acc y axis = "); Serial.println(a.acceleration.y);
+      //Serial.print("acc z axis = "); Serial.println(a.acceleration.z);
+
+
+      //Serial.print("pitch = "); Serial.println(pitch);
+      // Serial.print("roll = "); Serial.println(roll);
+      //Serial.print("z axis = "); Serial.println(zax);
+
+
+
+
+
+
+      drawCompass(75, 70, 120, 40, angles); // Draw centre of compass at 50,50
+
+      drawCompass2(75, 60, 120, 155, angle); // Draw centre of compass at 50,50
+
+      drawScaleSprite(120, 50, angles);
+      drawScaleSprite1(120, 50, angles);
+
+      drawScaleSprites(120, 40, angle);
+      drawScaleSprites1(120, 40, angle);
+      drawFooterSprite(temp, altitude);
+      drawGPSSprite(temp, altitude);
+      /*
+
+        tft.setTextColor(TFT_YELLOW, TFT_BLACK); // Text with background
+        //tft.setCursor(0, 210 );
+        //tft.setTextDatum(BL_DATUM);
+        //tft.printf("%s °c ", String(temps.temperature, 1));
+
+        //tft.setCursor(158, 210 );
+        tft.setTextPadding(50);
+        tft.setTextDatum(BL_DATUM);
+        //tft.drawNumber((int) altitude);
+        //tft.printf( "%s m", String(altitude, 0) );
+        // tft.drawString( String(temps.temperature, 1), 0, 235, 4);
+        tft.drawString( String(temp, 1), 0, 235, 4);
+        tft.setTextPadding(10);
+        tft.drawString("c", 55, 235, 4);
+
+        //tft.setCursor(158, 210 );
+        tft.setTextPadding(50);
+        tft.setTextDatum(BR_DATUM);
+        //tft.drawNumber((int) altitude);
+        //tft.printf( "%s m", String(altitude, 0) );
+        tft.drawString( String(altitude, 0), 215, 235, 4);
+        tft.setTextPadding(1);
+        tft.drawString("m", 240, 235, 4);
+        // tft.drawNumber(altitude);
+        //}
+
+        //delay(WAIT);
+      */
+
+      //delay(1000);
+   }
+    
+}
+
+void loop() {
 
 }
 
@@ -371,7 +525,7 @@ void drawFooterSprite(float temp, float altitude) {
   ft.setColorDepth(4);
   ft.createSprite(240, 30);
   ft.createPalette(palette);
-    ft.fillSprite(BLACK);
+  ft.fillSprite(BLACK);
 
   //ft.setTextColor(RED, BLACK); // Text with background
   //tft.setCursor(0, 210 );
@@ -384,16 +538,16 @@ void drawFooterSprite(float temp, float altitude) {
   //tft.drawNumber((int) altitude);
   //tft.printf( "%s m", String(altitude, 0) );
   // tft.drawString( String(temps.temperature, 1), 0, 235, 4);
-  ft.drawString( String(temp, 1)+" c", 0, 0, 4);
+  ft.drawString( String(temp, 1) + " c", 0, 0, 4);
   //ft.setTextPadding(10);
   // ft.drawString("c", 55, 0, 4);
 
   //tft.setCursor(158, 210 );
-   ft.setTextPadding(70);
- // ft.setTextDatum(BR_DATUM);
+  ft.setTextPadding(70);
+  // ft.setTextDatum(BR_DATUM);
   //tft.drawNumber((int) altitude);
   //tft.printf( "%s m", String(altitude, 0) );
-  ft.drawString( String(altitude, 0)+" m", 170, 0, 4);
+  ft.drawString( String(altitude, 0) + " m", 170, 0, 4);
   // ft.setTextPadding(1);
   //ft.drawString("m", 240, 0, 4);
 
@@ -405,6 +559,74 @@ void drawFooterSprite(float temp, float altitude) {
 }
 
 
+void drawGPSSprite(float temp, float altitude) {
+
+
+  gpsdata_struct datagps;
+  datagps = getGPSData();
+
+  // img.pushSprite(posx-x, posy-y, TFT_BLACK);
+  //img.setPivot(50, 50);      // Set pivot relative to top left corner of Sprite
+  // img.deleteSprite();
+
+  fts.setColorDepth(4);
+  fts.createSprite(240, 80);
+  fts.createPalette(palette);
+  fts.fillSprite(BLACK);
+
+  //ft.setTextColor(RED, BLACK); // Text with background
+  //tft.setCursor(0, 210 );
+  //tft.setTextDatum(BL_DATUM);
+  //tft.printf("%s °c ", String(temps.temperature, 1));
+
+  // fts.setCursor(0, 0);
+  // fts.printf( "Pos:" );
+  fts.setTextPadding(240);
+  fts.setTextDatum(TC_DATUM);
+  //fts.drawNumber(get);
+  //tft.printf( "%s m", String(altitude, 0) );
+  // tft.drawString( String(temps.temperature, 1), 0, 235, 4);
+  //  fts.drawString( "pos:" + String(datagps.Lat, 5) + " ," + String(datagps.Long, 5), 0, 0, 1);
+
+  //fts.drawString( " " + datagps.datelocal, 0, 10, 1);
+  if (datagps.valid_location){
+    fts.drawString(" ", 120, 30, 4);
+    fts.drawString(String(datagps.gps_speed, 0) + "", 120, 0, 7);
+  }else{
+    fts.drawString("Searching....", 120, 0, 4);
+    fts.drawString("Sat in view : "+String(datagps.num_sat), 120, 30, 4);
+  }
+
+
+  //fts.setTextColor(GREEN, BLACK);
+  fts.setTextPadding(240);
+  fts.setTextDatum(TC_DATUM);
+  fts.drawString( " " + datagps.datelocal, 120, 55, 4);
+  //fts.drawString( "alt:" + String(datagps.alt, 0), 0, 40, 1);
+  //fts.drawString( "satused:" + String(datagps.num_sat, 0), 0, 50, 1);
+  //fts.drawString( "sat View:" + String(datagps.satinview, 0), 0, 60, 1);
+
+  //Serial.println(String(datagps.Lat, 5) + " ," + String(datagps.Long, 5));
+  //ft.setTextPadding(10);
+  // ft.drawString("c", 55, 0, 4);
+
+  //tft.setCursor(158, 210 );
+  // ft.setTextPadding(70);
+  // ft.setTextDatum(BR_DATUM);
+  //tft.drawNumber((int) altitude);
+  //tft.printf( "%s m", String(altitude, 0) );
+  //ft.drawString( String(altitude, 0)+" m", 170, 0, 4);
+  // ft.setTextPadding(1);
+  //ft.drawString("m", 240, 0, 4);
+
+
+  fts.pushSprite(0, 242, BLACK);
+  //ft.setPivot(120, 220);     // Set pivot to middle of TFT screen
+  //ft.pushRotated(0);
+  fts.deleteSprite();
+}
+
+
 void drawScaleSprite(int x, int y, int angle) {
 
   sc1.fillSprite(TFT_WHITE);
@@ -413,7 +635,7 @@ void drawScaleSprite(int x, int y, int angle) {
   // img.deleteSprite();
 
   sc1.setColorDepth(4);
-  sc1.createSprite(44, (y*2));
+  sc1.createSprite(44, (y * 2));
   sc1.createPalette(palette);
 
   int ang = 0;
@@ -483,7 +705,7 @@ void drawScaleSprite1(int x, int y, int angle) {
   // img.deleteSprite();
 
   sc2.setColorDepth(4);
-  sc2.createSprite(44, (y*2));
+  sc2.createSprite(44, (y * 2));
   sc2.createPalette(palette);
 
   int ang = 0;
@@ -869,7 +1091,7 @@ void drawCompass2(int x, int y, int posx, int posy, int angle)
   //imgs.drawString("S",x,y+42,2);
   //imgs.drawString("W",x-42,9,2);
   imgs.pushImage(0, 25, backWidth, backHeight, back);
-  imgs.drawCircle(x, y+15, 30, TFT_DARKGREY);
+  imgs.drawCircle(x, y + 15, 30, TFT_DARKGREY);
   int angl = 90;
 
   //getCoord(x, y, &lx1, &ly1, NEEDLE_L, angl);
@@ -881,8 +1103,8 @@ void drawCompass2(int x, int y, int posx, int posy, int angle)
   //img.fillTriangle(lx1,ly1,lx3,ly3,lx4,ly4,TFT_RED);
   //img.fillTriangle(lx2,ly2,lx3,ly3,lx4,ly4,TFT_LIGHTGREY);
 
-  imgs.fillCircle(x, y+15, 3, TFT_DARKGREY);
-  imgs.fillCircle(x, y+15, 2, TFT_LIGHTGREY);
+  imgs.fillCircle(x, y + 15, 3, TFT_DARKGREY);
+  imgs.fillCircle(x, y + 15, 2, TFT_LIGHTGREY);
   imgs.drawString(String(angle), x, y + 20, 6);
 
 
